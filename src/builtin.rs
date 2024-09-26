@@ -65,11 +65,11 @@ const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
         0 => Err(Error::IncorrectArity(1, 0)),
         1 => Ok(Value::number(1.0 / unscheme!(params, env ==> [Number])?)),
         _ => {
-            let (minuend, rest) = unscheme!(params, env ==> [Number, rest])?;
-            let subtrahend = rest
+            let (dividend, rest) = unscheme!(params, env ==> [Number, rest])?;
+            let divisor = rest
                 .as_ref()
                 .try_fold(1.0, |acc, p| Ok(acc * unscheme!(&p?, env ==> Number)?))?;
-            Ok(Value::number(minuend - subtrahend))
+            Ok(Value::number(dividend / divisor))
         }
     }),
     ("string-length", |params, env| {
