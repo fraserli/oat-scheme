@@ -11,6 +11,15 @@ pub fn builtins() -> impl Iterator<Item = (String, Rc<Value>)> {
 }
 
 const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
+    ("display", |params, env| {
+        let value = unscheme!(params, env ==> [any])?;
+        match *value {
+            Value::String(ref s) => println!("{}", s),
+            Value::Character(c) => println!("{}", c),
+            _ => println!("{}", value),
+        }
+        Ok(Value::void())
+    }),
     ("not", |params, env| {
         let b = unscheme!(params, env ==> [Boolean])?;
         Ok(Value::boolean(b))
