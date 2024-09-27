@@ -20,25 +20,24 @@ impl Value {
 }
 
 fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
-    let global_env = env;
-    let env = &mut global_env.new_scope();
+    let initial_stack_depth = env.depth();
 
     // Loop only repeats during a tail call
-    'tail_call: loop {
+    let ret = 'tail_call: loop {
         let (name, args) = match *value {
             Value::Pair((ref car, ref cdr)) => (car, cdr),
-            Value::Symbol(ref name) => return env.get(name),
+            Value::Symbol(ref name) => break env.get(name)?,
             Value::EmptyList => return Err(Error::EmptyApplication),
-            _ => return Ok(value),
+            _ => break value,
         };
 
         if let Ok(s) = unscheme!(name => Symbol) {
             match s.as_ref() {
-                "define" => return eval_define(args, global_env),
-                "and" => return eval_and(args, env),
-                "or" => return eval_or(args, env),
-                "lambda" => return eval_lambda(args),
-                "quote" => return eval_quote(args),
+                "define" => break eval_define(args, env)?,
+                "and" => break eval_and(args, env)?,
+                "or" => break eval_or(args, env)?,
+                "lambda" => break eval_lambda(args)?,
+                "quote" => break eval_quote(args)?,
                 "if" => {
                     let (predicate, (consequent, alternative)) =
                         unscheme!(args => [any, any, any])?;
@@ -62,7 +61,7 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
         };
 
         match procedure {
-            Procedure::Primitive(f) => break f(args, env),
+            Procedure::Primitive(f) => break f(args, env)?,
             Procedure::Compound { parameters, body } => {
                 let args: Vec<Rc<Value>> = args
                     .map(|arg| arg?.eval_to_value(env))
@@ -70,6 +69,10 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
 
                 if args.len() != parameters.len() {
                     return Err(Error::IncorrectArity(parameters.len(), args.len()));
+                }
+
+                if env.depth() == initial_stack_depth {
+                    env.new_scope();
                 }
 
                 for (param, arg) in parameters.iter().zip(args) {
@@ -83,12 +86,16 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
                 }
 
                 let last = Rc::clone(&body[body.len() - 1]);
-
                 value = last;
+
                 continue 'tail_call;
             }
         }
-    }
+    };
+
+    env.restore(initial_stack_depth);
+
+    Ok(ret)
 }
 
 fn eval_define(args: &Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
