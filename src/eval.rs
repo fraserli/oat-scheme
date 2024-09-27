@@ -151,3 +151,34 @@ fn make_lambda(parameters: &Value, body: &Value) -> Result<Rc<Value>> {
         Ok(Value::procedure(Procedure::Compound { parameters, body }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{parse_one, Environment, Value};
+
+    #[test]
+    fn scoping() {
+        let mut env = Environment::default();
+
+        parse_one("(define (f x) (define a 0) x)")
+            .unwrap()
+            .eval(&mut env)
+            .unwrap();
+
+        parse_one("(f 0)").unwrap().eval(&mut env).unwrap();
+
+        assert!(env.get("f").is_ok());
+        assert!(env.get("x").is_err());
+        assert!(env.get("a").is_err());
+
+        parse_one("(define (g f) (eq? f 0))")
+            .unwrap()
+            .eval(&mut env)
+            .unwrap();
+
+        assert_eq!(
+            parse_one("(g 0)").unwrap().eval(&mut env).unwrap(),
+            Value::boolean(true)
+        );
+    }
+}
