@@ -22,7 +22,7 @@ const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
     }),
     ("not", |params, env| {
         let b = unscheme!(params, env ==> [Boolean])?;
-        Ok(Value::boolean(b))
+        Ok(Value::boolean(!b))
     }),
     ("eq?", |params, env| {
         let (lhs, rhs) = unscheme!(params, env ==> [any, any])?;
