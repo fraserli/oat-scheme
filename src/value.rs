@@ -84,7 +84,10 @@ impl Iterator for &Value {
                 *self = cdr;
                 Some(Ok(Rc::clone(car)))
             }
-            _ => Some(Err(Error::ExpectedList(Rc::new(self.clone())))),
+            _ => {
+                *self = &Value::EmptyList;
+                Some(Err(Error::ExpectedList(Rc::new(self.clone()))))
+            },
         }
     }
 }
