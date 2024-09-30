@@ -36,7 +36,7 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
                 "define" => break eval_define(args, env)?,
                 "and" => break eval_and(args, env)?,
                 "or" => break eval_or(args, env)?,
-                "lambda" => break eval_lambda(args)?,
+                "lambda" => break eval_lambda(args, env)?,
                 "quote" => break eval_quote(args)?,
                 "if" => {
                     let (predicate, (consequent, alternative)) =
@@ -62,7 +62,11 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
 
         match procedure {
             Procedure::Primitive(f) => break f(args, env)?,
-            Procedure::Compound { parameters, body } => {
+            Procedure::Compound {
+                parameters,
+                body,
+                captures,
+            } => {
                 let args: Vec<Rc<Value>> = args
                     .map(|arg| arg?.eval_to_value(env))
                     .collect::<Result<_>>()?;
@@ -77,6 +81,10 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
 
                 for (param, arg) in parameters.iter().zip(args) {
                     env.bind(param, &arg);
+                }
+
+                for (name, value) in captures {
+                    env.bind(name, value);
                 }
 
                 debug_assert!(!body.is_empty());
@@ -101,7 +109,8 @@ fn eval(mut value: Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
 fn eval_define(args: &Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
     if let Ok(((ref name, ref params), ref body)) = unscheme!(args => [Pair, rest]) {
         let name = unscheme!(name => Symbol)?;
-        env.bind(&name, &make_lambda(params, body)?);
+        let procedure = make_lambda(params, body, env)?;
+        env.bind(&name, &procedure);
     } else {
         let (lhs, rhs) = unscheme!(args => [Symbol, any])?;
         let rhs = rhs.eval_to_value(env)?;
@@ -129,26 +138,57 @@ fn eval_or(args: &Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
     Ok(Value::boolean(false))
 }
 
-fn eval_lambda(args: &Rc<Value>) -> Result<Rc<Value>> {
+fn eval_lambda(args: &Rc<Value>, env: &mut Environment) -> Result<Rc<Value>> {
     let (parameters, body) = unscheme!(args => Pair)?;
-    make_lambda(&parameters, &body)
+    make_lambda(&parameters, &body, env)
 }
 
 fn eval_quote(args: &Rc<Value>) -> Result<Rc<Value>> {
     unscheme!(args => [any])
 }
 
-fn make_lambda(parameters: &Value, body: &Value) -> Result<Rc<Value>> {
+fn make_lambda(parameters: &Value, body: &Value, env: &mut Environment) -> Result<Rc<Value>> {
     let parameters = parameters
         .map(|p| p.and_then(|p| unscheme!(&p => Symbol)))
-        .collect::<Result<_>>()?;
+        .collect::<Result<Vec<_>>>()?;
 
     let body: Vec<Rc<Value>> = body.collect::<Result<_>>()?;
 
     if body.is_empty() {
-        Err(Error::EmptyProcedure)
-    } else {
-        Ok(Value::procedure(Procedure::Compound { parameters, body }))
+        return Err(Error::EmptyProcedure);
+    }
+
+    let mut captures = Vec::new();
+    for expr in &body {
+        get_captures(expr, &parameters, env, &mut captures);
+    }
+
+    Ok(Value::procedure(Procedure::Compound {
+        parameters,
+        body,
+        captures,
+    }))
+}
+
+fn get_captures(
+    value: &Value,
+    parameters: &[String],
+    env: &mut Environment,
+    captures: &mut Vec<(String, Rc<Value>)>,
+) {
+    match value {
+        Value::Symbol(s) => {
+            if !parameters.contains(s) {
+                if let Ok(v) = env.get(s) {
+                    captures.push((s.to_owned(), v));
+                }
+            }
+        }
+        Value::Pair((car, cdr)) => {
+            get_captures(car, parameters, env, captures);
+            get_captures(cdr, parameters, env, captures);
+        }
+        _ => {}
     }
 }
 
@@ -179,6 +219,31 @@ mod tests {
         assert_eq!(
             parse_one("(g 0)").unwrap().eval(&mut env).unwrap(),
             Value::boolean(true)
+        );
+    }
+
+    #[test]
+    fn closures() {
+        let mut env = Environment::default();
+
+        parse_one(
+            "
+            (define (make-closure)
+              (define local 0)
+              (define (closure) local)
+              closure)
+            ",
+        )
+        .unwrap()
+        .eval(&mut env)
+        .unwrap();
+
+        assert_eq!(
+            parse_one("((make-closure))")
+                .unwrap()
+                .eval(&mut env)
+                .unwrap(),
+            Value::number(0.0),
         );
     }
 }

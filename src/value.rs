@@ -27,6 +27,7 @@ pub enum Procedure {
     Compound {
         parameters: Vec<String>,
         body: Vec<Rc<Value>>,
+        captures: Vec<(String, Rc<Value>)>,
     },
 }
 
@@ -87,7 +88,7 @@ impl Iterator for &Value {
             _ => {
                 *self = &Value::EmptyList;
                 Some(Err(Error::ExpectedList(Rc::new(self.clone()))))
-            },
+            }
         }
     }
 }
