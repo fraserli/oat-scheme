@@ -176,19 +176,23 @@ fn get_captures(
     env: &mut Environment,
     captures: &mut Vec<(String, Rc<Value>)>,
 ) {
-    match value {
-        Value::Symbol(s) => {
-            if !parameters.contains(s) {
-                if let Ok(v) = env.get(s) {
-                    captures.push((s.to_owned(), v));
+    let mut stack = vec![value];
+
+    while let Some(v) = stack.pop() {
+        match v {
+            Value::Symbol(s) => {
+                if !parameters.contains(s) {
+                    if let Ok(v) = env.get(s) {
+                        captures.push((s.to_owned(), v));
+                    }
                 }
             }
+            Value::Pair((car, cdr)) => {
+                stack.push(car);
+                stack.push(cdr);
+            }
+            _ => {}
         }
-        Value::Pair((car, cdr)) => {
-            get_captures(car, parameters, env, captures);
-            get_captures(cdr, parameters, env, captures);
-        }
-        _ => {}
     }
 }
 
