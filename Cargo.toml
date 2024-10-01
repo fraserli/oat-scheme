@@ -13,3 +13,4 @@ path = "src/bin/oats.rs"
 
 [dependencies]
 chumsky = { version = "=1.0.0-alpha.7", features = ["label"] }
+gc = { version = "0.5.0", features = ["derive"] }

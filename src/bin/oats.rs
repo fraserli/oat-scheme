@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-use oat_scheme::{parse, Environment, Value};
+use oat_scheme::{eval, parse, Environment, Value};
 
 fn run(input: &str, env: &mut Environment) {
     let values = match parse(input) {
@@ -13,7 +13,7 @@ fn run(input: &str, env: &mut Environment) {
     };
 
     for value in values {
-        match value.eval(env) {
+        match eval(value, env) {
             Ok(value) => {
                 if *value != Value::Void {
                     println!("{}", value)

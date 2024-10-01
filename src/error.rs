@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use gc::Gc;
 
 use crate::value::Value;
 
@@ -9,11 +9,11 @@ pub enum Error {
     UndefinedVariable(String),
     EmptyApplication,
     EmptyProcedure,
-    ExpectedProcedure(Rc<Value>),
-    ExpectedValue(Rc<Value>),
+    ExpectedProcedure(Gc<Value>),
+    ExpectedValue(Gc<Value>),
     IncorrectArity(usize, usize),
-    TypeMismatch(String, Rc<Value>),
-    ExpectedList(Rc<Value>),
+    TypeMismatch(String, Gc<Value>),
+    ExpectedList(Gc<Value>),
     IndexOutOfBounds(usize),
     UnexpectedEndOfInput,
     ParseError(Vec<(chumsky::span::SimpleSpan, Vec<String>, char)>),

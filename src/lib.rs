@@ -9,13 +9,15 @@ mod value;
 
 pub use environment::Environment;
 pub use error::Error;
+pub use eval::{eval, eval_to_value};
+pub use gc::{self, Gc};
 pub use parse::{parse, parse_one};
 pub use value::Value;
 
-/// Constructs an Rc<[Value](Value)> using S-expression syntax.
+/// Constructs an Gc<[Value](Value)> using S-expression syntax.
 ///
 /// ```
-/// use oat_scheme::{parse_one, scheme, Value};
+/// use oat_scheme::{Gc, parse_one, scheme, Value};
 ///
 /// // Create a single value
 /// assert_eq!(scheme!({ true }), parse_one("#t").unwrap());
@@ -34,7 +36,7 @@ pub use value::Value;
 /// );
 ///
 /// // Insert an existing value
-/// let value: std::rc::Rc<Value> = scheme!(cons a b);
+/// let value: Gc<Value> = scheme!(cons a b);
 /// assert_eq!(
 ///     scheme!(1 2 [[&value]] 3),
 ///     parse_one("(1 2 (cons a b) 3)").unwrap(),
@@ -47,7 +49,7 @@ macro_rules! scheme {
     ({ true }) => { $crate::Value::boolean(true) };
     ({ false }) => { $crate::Value::boolean(false) };
     ({ $value:ident }) => { $crate::Value::symbol(stringify!($value)) };
-    ({ [[$value:expr]] }) => { std::rc::Rc::clone($value) };
+    ({ [[$value:expr]] }) => { $value.clone() };
     ({ [$($value:tt)+] }) => { $crate::Value::symbol(stringify!($($value)+)) };
     ({ $value:literal }) => {
         if let Some(n) = (&$value as &dyn std::any::Any).downcast_ref::<i32>() {
@@ -73,26 +75,26 @@ macro_rules! scheme {
 
 #[macro_export]
 macro_rules! unscheme {
-    ($value:expr => any) => { Ok(std::rc::Rc::clone($value)) };
-    ($value:expr => [rest]) => { Ok(std::rc::Rc::clone($value)) };
+    ($value:expr => any) => { Ok($value.clone()) };
+    ($value:expr => [rest]) => { Ok($value.clone()) };
     ($value:expr => $variant:ident) => {
         match &**$value {
             $crate::Value::$variant(inner) => Ok(inner.clone()),
             _ => Err($crate::Error::TypeMismatch(
                 stringify!($variant).to_string().to_lowercase(),
-                std::rc::Rc::clone($value)
+                $value.clone()
             )),
         }
     };
     ($value:expr => [$variant:ident]) => {
         unscheme!($value => Pair).and_then(|(car, cdr)| match *cdr {
             $crate::Value::EmptyList => unscheme!(&car => $variant),
-            _ => Err($crate::Error::ExpectedList(std::rc::Rc::clone(&cdr))),
+            _ => Err($crate::Error::ExpectedList(cdr.clone())),
         })
     };
     ($value:expr => [$variant:ident, $($rest:ident),*]) => {
         unscheme!($value => Pair)
-            .map_err(|_| $crate::Error::ExpectedList(std::rc::Rc::clone($value)))
+            .map_err(|_| $crate::Error::ExpectedList($value.clone()))
             .and_then(|(car, cdr)| Ok((
                 unscheme!(&car => $variant)?,
                 unscheme!(&cdr => [$($rest),*])?,
@@ -100,15 +102,15 @@ macro_rules! unscheme {
     };
 
     // Evaluate before destructuring
-    ($value:expr, $env:ident ==> any) => { $value.eval_to_value($env) };
-    ($value:expr, $env:ident ==> [rest]) => { Ok(std::rc::Rc::clone($value)) };
+    ($value:expr, $env:ident ==> any) => { $crate::eval_to_value($value.clone(), $env) };
+    ($value:expr, $env:ident ==> [rest]) => { Ok($value.clone()) };
     ($value:expr, $env:ident ==> $variant:ident) => {
-        $value.eval_to_value($env)
+        $crate::eval_to_value($value.clone(), $env)
             .and_then(|value| unscheme!(&value => $variant))
     };
     ($value:expr, $env:ident ==> [$variant:ident]) => {
         unscheme!($value => [any])
-            .and_then(|value| value.eval_to_value($env))
+            .and_then(|value| $crate::eval_to_value(value, $env))
             .and_then(|value| unscheme!(&value => $variant))
     };
     ($value:expr, $env:ident ==> [$variant:ident, $($rest:ident),*]) => {

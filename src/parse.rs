@@ -1,21 +1,19 @@
-use std::rc::Rc;
-
 use chumsky::prelude::*;
 use chumsky::text::int;
+use gc::Gc;
 use text::whitespace;
 
 use crate::error::{Error, Result};
-use crate::scheme;
 use crate::value::Value;
 
-pub fn parse_one(input: &str) -> Result<Rc<Value>> {
+pub fn parse_one(input: &str) -> Result<Gc<Value>> {
     parser()
         .parse(input.trim())
         .into_result()
         .map_err(Error::from_parse_errors)
 }
 
-pub fn parse(input: &str) -> Result<Vec<Rc<Value>>> {
+pub fn parse(input: &str) -> Result<Vec<Gc<Value>>> {
     let program_parser = parser()
         .separated_by(whitespace())
         .collect()
@@ -27,7 +25,7 @@ pub fn parse(input: &str) -> Result<Vec<Rc<Value>>> {
         .map_err(Error::from_parse_errors)
 }
 
-fn parser<'a>() -> impl Parser<'a, &'a str, Rc<Value>, extra::Err<Rich<'a, char>>> {
+fn parser<'a>() -> impl Parser<'a, &'a str, Gc<Value>, extra::Err<Rich<'a, char>>> {
     recursive(|expression| {
         let boolean = choice((
             just("#t").then(just("rue").or_not()).to(true),
@@ -86,7 +84,12 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Rc<Value>, extra::Err<Rich<'a, char>
 
         let quote = just('\'')
             .ignore_then(expression.clone())
-            .map(|expr| Rc::into_inner(scheme!(quote[[&expr]])).unwrap())
+            .map(|expr| {
+                Value::Pair((
+                    Value::symbol("quote"),
+                    Value::pair(&expr, &Value::empty_list()),
+                ))
+            })
             .labelled("quote");
 
         let atom = choice((boolean, character, number, string, symbol, quote));
@@ -97,13 +100,13 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Rc<Value>, extra::Err<Rich<'a, char>
             .collect::<Vec<_>>()
             .map(|v| {
                 v.into_iter().rev().fold(Value::EmptyList, |acc, expr| {
-                    Value::Pair((expr, Rc::new(acc)))
+                    Value::Pair((expr, Gc::new(acc)))
                 })
             })
             .delimited_by(just('('), just(')'))
             .labelled("list");
 
-        choice((atom, list)).map(Rc::new)
+        choice((atom, list)).map(Gc::new)
     })
 }
 

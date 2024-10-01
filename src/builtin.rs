@@ -1,16 +1,23 @@
-use std::rc::Rc;
+use gc::Gc;
 
-use crate::error::Error;
+use crate::environment::Environment;
+use crate::error::{Error, Result};
+use crate::eval::eval_to_value;
 use crate::unscheme;
-use crate::value::{PrimitiveProcedure, Procedure, Value};
+use crate::value::{PrimitiveProcedure, Value};
 
-pub fn builtins() -> impl Iterator<Item = (String, Rc<Value>)> {
-    BUILTINS
-        .iter()
-        .map(|&(s, f)| (s.to_owned(), Value::procedure(Procedure::Primitive(f))))
+pub fn builtins() -> impl Iterator<Item = (String, Gc<Value>)> {
+    BUILTINS.iter().map(|&(s, f)| {
+        (
+            s.to_owned(),
+            Gc::new(Value::PrimitiveProcedure(PrimitiveProcedure(f))),
+        )
+    })
 }
 
-const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
+type PrimitiveProcedureFunction = fn(&Gc<Value>, &mut Environment) -> Result<Gc<Value>>;
+
+const BUILTINS: &[(&str, PrimitiveProcedureFunction)] = &[
     ("display", |params, env| {
         let value = unscheme!(params, env ==> [any])?;
         match *value {
@@ -41,19 +48,19 @@ const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
         Ok(cdr)
     }),
     ("list", |params, env| {
-        Ok(Rc::new(
+        Ok(Gc::new(
             params
                 .as_ref()
-                .map(|p| p?.eval_to_value(env))
-                .collect::<Result<_, _>>()?,
+                .map(|p| eval_to_value(p?, env))
+                .collect::<Result<_>>()?,
         ))
     }),
     ("abs", |params, env| {
         Ok(Value::number(unscheme!(params, env ==> [Number])?.abs()))
     }),
     ("+", |params, env| {
-        let numbers = params.map(|p| unscheme!(&p?, env ==> Number));
-        Ok(Value::number(numbers.sum::<Result<_, _>>()?))
+        let numbers = params.map(|p| unscheme!(p?, env ==> Number));
+        Ok(Value::number(numbers.sum::<Result<_>>()?))
     }),
     ("-", |params, env| match params.count() {
         0 => Err(Error::IncorrectArity(1, 0)),
@@ -62,13 +69,13 @@ const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
             let (minuend, rest) = unscheme!(params, env ==> [Number, rest])?;
             let subtrahend = rest
                 .as_ref()
-                .try_fold(0.0, |acc, p| Ok(acc + unscheme!(&p?, env ==> Number)?))?;
+                .try_fold(0.0, |acc, p| Ok(acc + unscheme!(p?, env ==> Number)?))?;
             Ok(Value::number(minuend - subtrahend))
         }
     }),
     ("*", |params, env| {
-        let numbers = params.map(|p| unscheme!(&p?, env ==> Number));
-        Ok(Value::number(numbers.product::<Result<_, _>>()?))
+        let numbers = params.map(|p| unscheme!(p?, env ==> Number));
+        Ok(Value::number(numbers.product::<Result<_>>()?))
     }),
     ("/", |params, env| match params.count() {
         0 => Err(Error::IncorrectArity(1, 0)),
@@ -98,9 +105,9 @@ const BUILTINS: &[(&str, PrimitiveProcedure)] = &[
     }),
     ("string-append", |params, env| {
         let string = params
-            .map(|p| unscheme!(&p?, env ==> String))
-            .collect::<Result<String, _>>()?;
-        Ok(Rc::new(Value::String(string)))
+            .map(|p| unscheme!(p?, env ==> String))
+            .collect::<Result<String>>()?;
+        Ok(Gc::new(Value::String(string)))
     }),
 ];
 
